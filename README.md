@@ -277,3 +277,10 @@ let colors = OkColor.gradient(
 	method: .okhsl
 )
 ```
+
+## License
+
+OkColor is available under the MIT License. The package includes Swift ports and
+copied reference sources derived from Bjorn Ottosson's Oklab reference
+implementation, also distributed under the MIT License. See `LICENSE` for both
+notices.
