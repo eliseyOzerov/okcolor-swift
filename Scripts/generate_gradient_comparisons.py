@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Generate README gradient comparison images.
+
+The generated PNGs compare classic HSL interpolation with the package's OkColor
+Oklab interpolation. The Oklab constants match Sources/OkColor/OkLab.swift.
+"""
+
+from __future__ import annotations
+
+import math
+import os
+import struct
+import zlib
+
+WIDTH = 960
+STRIP_HEIGHT = 46
+ROW_GAP = 4
+GROUP_GAP = 20
+BACKGROUND = (246, 246, 243)
+SEPARATOR = (224, 224, 220)
+
+PAIRS = [
+	((0.05, 0.20, 1.00), (1.00, 0.90, 0.05)),
+	((0.88, 0.04, 0.92), (0.04, 0.88, 0.35)),
+	((1.00, 0.12, 0.04), (0.00, 0.72, 1.00)),
+]
+
+
+def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+	return min(max(value, lower), upper)
+
+
+def lerp(a: float, b: float, t: float) -> float:
+	return a + (b - a) * t
+
+
+def srgb_to_linear(c: float) -> float:
+	return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def linear_to_srgb(c: float) -> float:
+	c = clamp(c)
+	return 12.92 * c if c <= 0.0031308 else 1.055 * (c ** (1.0 / 2.4)) - 0.055
+
+
+def cbrt(value: float) -> float:
+	return math.copysign(abs(value) ** (1.0 / 3.0), value)
+
+
+def srgb_to_oklab(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
+	r, g, b = (srgb_to_linear(channel) for channel in rgb)
+	l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b
+	m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b
+	s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
+	l_, m_, s_ = cbrt(l), cbrt(m), cbrt(s)
+	return (
+		0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+		1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+		0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+	)
+
+
+def oklab_to_srgb(lab: tuple[float, float, float]) -> tuple[float, float, float]:
+	l, a, b = lab
+	l_ = l + 0.3963377774 * a + 0.2158037573 * b
+	m_ = l - 0.1055613458 * a - 0.0638541728 * b
+	s_ = l - 0.0894841775 * a - 1.2914855480 * b
+	l3, m3, s3 = l_ * l_ * l_, m_ * m_ * m_, s_ * s_ * s_
+	return (
+		linear_to_srgb(4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3),
+		linear_to_srgb(-1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3),
+		linear_to_srgb(-0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3),
+	)
+
+
+def rgb_to_hsl(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
+	r, g, b = rgb
+	max_c = max(rgb)
+	min_c = min(rgb)
+	lightness = (max_c + min_c) / 2
+	if max_c == min_c:
+		return (0.0, 0.0, lightness)
+
+	delta = max_c - min_c
+	saturation = delta / (2 - max_c - min_c) if lightness > 0.5 else delta / (max_c + min_c)
+	if max_c == r:
+		hue = ((g - b) / delta + (6 if g < b else 0)) / 6
+	elif max_c == g:
+		hue = ((b - r) / delta + 2) / 6
+	else:
+		hue = ((r - g) / delta + 4) / 6
+	return (hue, saturation, lightness)
+
+
+def hue_to_rgb(p: float, q: float, t: float) -> float:
+	if t < 0:
+		t += 1
+	if t > 1:
+		t -= 1
+	if t < 1 / 6:
+		return p + (q - p) * 6 * t
+	if t < 1 / 2:
+		return q
+	if t < 2 / 3:
+		return p + (q - p) * (2 / 3 - t) * 6
+	return p
+
+
+def hsl_to_rgb(hsl: tuple[float, float, float]) -> tuple[float, float, float]:
+	hue, saturation, lightness = hsl
+	if saturation == 0:
+		return (lightness, lightness, lightness)
+	q = lightness * (1 + saturation) if lightness < 0.5 else lightness + saturation - lightness * saturation
+	p = 2 * lightness - q
+	return (
+		hue_to_rgb(p, q, hue + 1 / 3),
+		hue_to_rgb(p, q, hue),
+		hue_to_rgb(p, q, hue - 1 / 3),
+	)
+
+
+def interpolate_hsl(start: tuple[float, float, float], end: tuple[float, float, float], t: float) -> tuple[float, float, float]:
+	start_h, start_s, start_l = rgb_to_hsl(start)
+	end_h, end_s, end_l = rgb_to_hsl(end)
+	delta = end_h - start_h
+	if abs(delta) > 0.5:
+		if delta > 0:
+			start_h += 1
+		else:
+			end_h += 1
+	return hsl_to_rgb((lerp(start_h, end_h, t) % 1, lerp(start_s, end_s, t), lerp(start_l, end_l, t)))
+
+
+def interpolate_oklab(start: tuple[float, float, float], end: tuple[float, float, float], t: float) -> tuple[float, float, float]:
+	start_lab = srgb_to_oklab(start)
+	end_lab = srgb_to_oklab(end)
+	return oklab_to_srgb(tuple(lerp(start_lab[index], end_lab[index], t) for index in range(3)))
+
+
+def oklab_grayscale(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
+	lightness = srgb_to_oklab(rgb)[0]
+	return oklab_to_srgb((lightness, 0.0, 0.0))
+
+
+def to_byte(channel: float) -> int:
+	return int(round(clamp(channel) * 255))
+
+
+def make_image(grayscale: bool) -> tuple[int, int, list[tuple[int, int, int]]]:
+	height = len(PAIRS) * (2 * STRIP_HEIGHT + ROW_GAP) + (len(PAIRS) - 1) * GROUP_GAP
+	pixels = [BACKGROUND] * (WIDTH * height)
+	y = 0
+	for pair_index, (start, end) in enumerate(PAIRS):
+		for row_index, interpolator in enumerate((interpolate_hsl, interpolate_oklab)):
+			row_y = y + row_index * (STRIP_HEIGHT + ROW_GAP)
+			for x in range(WIDTH):
+				t = x / (WIDTH - 1)
+				rgb = interpolator(start, end, t)
+				if grayscale:
+					rgb = oklab_grayscale(rgb)
+				pixel = tuple(to_byte(channel) for channel in rgb)
+				for dy in range(STRIP_HEIGHT):
+					pixels[(row_y + dy) * WIDTH + x] = pixel
+		if pair_index + 1 < len(PAIRS):
+			separator_y = y + 2 * STRIP_HEIGHT + ROW_GAP + GROUP_GAP // 2
+			for dy in range(2):
+				for x in range(WIDTH):
+					pixels[(separator_y + dy) * WIDTH + x] = SEPARATOR
+		y += 2 * STRIP_HEIGHT + ROW_GAP + GROUP_GAP
+	return WIDTH, height, pixels
+
+
+def png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+	return struct.pack('>I', len(data)) + chunk_type + data + struct.pack('>I', zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
+
+
+def write_png(path: str, width: int, height: int, pixels: list[tuple[int, int, int]]) -> None:
+	raw_rows = []
+	for y in range(height):
+		row = bytearray([0])
+		for x in range(width):
+			row.extend(pixels[y * width + x])
+		raw_rows.append(bytes(row))
+	raw = b''.join(raw_rows)
+	png = b'\x89PNG\r\n\x1a\n'
+	png += png_chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+	png += png_chunk(b'IDAT', zlib.compress(raw, 9))
+	png += png_chunk(b'IEND', b'')
+	with open(path, 'wb') as file:
+		file.write(png)
+
+
+def main() -> None:
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	output_dir = os.path.join(root, 'Docs', 'Images')
+	os.makedirs(output_dir, exist_ok=True)
+	for name, grayscale in (
+		('hsl-vs-okcolor-color.png', False),
+		('hsl-vs-okcolor-grayscale.png', True),
+	):
+		width, height, pixels = make_image(grayscale)
+		write_png(os.path.join(output_dir, name), width, height, pixels)
+
+
+if __name__ == '__main__':
+	main()
