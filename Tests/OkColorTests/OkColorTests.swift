@@ -1,7 +1,7 @@
-import OKColor
+import OkColor
 import XCTest
 
-final class OKColorTests: XCTestCase {
+final class OkColorTests: XCTestCase {
 	private let accuracy = 0.05
 
 	func testOkLabRoundtripRed() {

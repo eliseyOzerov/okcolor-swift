@@ -3,13 +3,13 @@
 import PackageDescription
 
 let package = Package(
-	name: "OKColor",
+	name: "OkColor",
 	platforms: [.iOS(.v18), .macOS(.v14), .tvOS(.v17), .visionOS(.v1)],
 	products: [
-		.library(name: "OKColor", targets: ["OKColor"]),
+		.library(name: "OkColor", targets: ["OkColor"]),
 	],
 	targets: [
-		.target(name: "OKColor"),
-		.testTarget(name: "OKColorTests", dependencies: ["OKColor"]),
+		.target(name: "OkColor"),
+		.testTarget(name: "OkColorTests", dependencies: ["OkColor"]),
 	]
 )

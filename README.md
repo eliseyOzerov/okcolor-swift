@@ -1,4 +1,4 @@
-# OKColor
+# OkColor
 
 Small Swift package for OkLab and OkLch color-space conversions.
 
