@@ -62,7 +62,7 @@ Magenta to green:
 Add the package to a Swift package manifest:
 
 ```swift
-.package(name: "OkColor", url: "https://github.com/eliseyOzerov/okcolor-swift", branch: "main")
+.package(url: "https://github.com/eliseyOzerov/okcolor-swift.git", from: "1.0.0")
 ```
 
 Then depend on the library product:
