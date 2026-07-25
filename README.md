@@ -31,9 +31,9 @@ model.
 
 ## Visual Comparison
 
-These generated comparisons use three saturated endpoint pairs. In each pair, the
-upper strip is classic HSL interpolation and the lower strip is OkColor's Oklab
-interpolation.
+These generated comparisons use saturated endpoint pairs. In each pair below,
+the upper strip is classic HSL interpolation and the lower strip is OkColor's
+straight Oklab interpolation.
 
 ![HSL versus OkColor gradients in color](Docs/Images/hsl-vs-okcolor-color.png)
 
@@ -41,6 +41,19 @@ The grayscale version converts each sampled color to a neutral gray with the sam
 Oklab lightness, making uneven lightness shifts easier to spot.
 
 ![HSL versus OkColor gradients in grayscale](Docs/Images/hsl-vs-okcolor-grayscale.png)
+
+Straight Oklab interpolation is often smoother than HSL, but colors on opposite
+sides of the hue wheel can still pass through low-chroma gray. For those cases,
+use a polar hue interpolation method such as `.oklch` and choose whether the hue
+travels the short or long way around the wheel. In each group below, the rows are
+straight Oklab, OkLch shortest path, and OkLch long path.
+
+![Oklab and OkLch hue-route gradients in color](Docs/Images/okcolor-routes-color.png)
+
+The same route examples in grayscale show that the OkLch rows keep a smooth
+lightness ramp while avoiding the neutral midpoint.
+
+![Oklab and OkLch hue-route gradients in grayscale](Docs/Images/okcolor-routes-grayscale.png)
 
 ## Installation
 

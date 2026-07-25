@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate README gradient comparison images.
 
-The generated PNGs compare classic HSL interpolation with the package's OkColor
-Oklab interpolation. The Oklab constants match Sources/OkColor/OkLab.swift.
+The generated PNGs compare classic HSL interpolation, straight Oklab
+interpolation, and Oklch hue-route interpolation. The Oklab constants match
+Sources/OkColor/OkLab.swift.
 """
 
 from __future__ import annotations
@@ -19,10 +20,16 @@ GROUP_GAP = 20
 BACKGROUND = (246, 246, 243)
 SEPARATOR = (224, 224, 220)
 
-PAIRS = [
+BASIC_PAIRS = [
 	((0.05, 0.20, 1.00), (1.00, 0.90, 0.05)),
 	((0.88, 0.04, 0.92), (0.04, 0.88, 0.35)),
 	((1.00, 0.12, 0.04), (0.00, 0.72, 1.00)),
+]
+
+ROUTE_PAIRS = [
+	((0.00, 0.00, 1.00), (1.00, 1.00, 0.00)),
+	((1.00, 0.00, 0.00), (0.00, 1.00, 1.00)),
+	((0.65, 0.00, 1.00), (0.95, 0.78, 0.00)),
 ]
 
 
@@ -73,6 +80,16 @@ def oklab_to_srgb(lab: tuple[float, float, float]) -> tuple[float, float, float]
 	)
 
 
+def srgb_to_oklch(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
+	l, a, b = srgb_to_oklab(rgb)
+	return (l, math.sqrt(a * a + b * b), math.atan2(b, a))
+
+
+def oklch_to_srgb(lch: tuple[float, float, float]) -> tuple[float, float, float]:
+	l, c, h = lch
+	return oklab_to_srgb((l, c * math.cos(h), c * math.sin(h)))
+
+
 def rgb_to_hsl(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
 	r, g, b = rgb
 	max_c = max(rgb)
@@ -119,22 +136,53 @@ def hsl_to_rgb(hsl: tuple[float, float, float]) -> tuple[float, float, float]:
 	)
 
 
+def positive_modulo(value: float, range_: float) -> float:
+	result = value % range_
+	return result + range_ if result < 0 else result
+
+
+def lerp_angle(start: float, end: float, t: float, range_: float, shortest_path: bool) -> float:
+	delta_a = abs(end - start)
+	delta_b = range_ - delta_a
+	shortest_crosses_range = shortest_path and delta_b < delta_a and delta_b != 0
+	longer_crosses_range = not shortest_path and delta_b > delta_a and start != end
+
+	if shortest_crosses_range or longer_crosses_range:
+		if end > start:
+			return positive_modulo(lerp(start + range_, end, t), range_)
+		return positive_modulo(lerp(start, end + range_, t), range_)
+	return positive_modulo(lerp(start, end, t), range_)
+
+
 def interpolate_hsl(start: tuple[float, float, float], end: tuple[float, float, float], t: float) -> tuple[float, float, float]:
 	start_h, start_s, start_l = rgb_to_hsl(start)
 	end_h, end_s, end_l = rgb_to_hsl(end)
-	delta = end_h - start_h
-	if abs(delta) > 0.5:
-		if delta > 0:
-			start_h += 1
-		else:
-			end_h += 1
-	return hsl_to_rgb((lerp(start_h, end_h, t) % 1, lerp(start_s, end_s, t), lerp(start_l, end_l, t)))
+	hue = lerp_angle(start_h, end_h, t, 1.0, True)
+	return hsl_to_rgb((hue, lerp(start_s, end_s, t), lerp(start_l, end_l, t)))
 
 
 def interpolate_oklab(start: tuple[float, float, float], end: tuple[float, float, float], t: float) -> tuple[float, float, float]:
 	start_lab = srgb_to_oklab(start)
 	end_lab = srgb_to_oklab(end)
 	return oklab_to_srgb(tuple(lerp(start_lab[index], end_lab[index], t) for index in range(3)))
+
+
+def interpolate_oklch(start: tuple[float, float, float], end: tuple[float, float, float], t: float, shortest_path: bool) -> tuple[float, float, float]:
+	start_l, start_c, start_h = srgb_to_oklch(start)
+	end_l, end_c, end_h = srgb_to_oklch(end)
+	return oklch_to_srgb((
+		lerp(start_l, end_l, t),
+		lerp(start_c, end_c, t),
+		lerp_angle(start_h, end_h, t, 2 * math.pi, shortest_path),
+	))
+
+
+def interpolate_oklch_short(start: tuple[float, float, float], end: tuple[float, float, float], t: float) -> tuple[float, float, float]:
+	return interpolate_oklch(start, end, t, True)
+
+
+def interpolate_oklch_long(start: tuple[float, float, float], end: tuple[float, float, float], t: float) -> tuple[float, float, float]:
+	return interpolate_oklch(start, end, t, False)
 
 
 def oklab_grayscale(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
@@ -146,12 +194,13 @@ def to_byte(channel: float) -> int:
 	return int(round(clamp(channel) * 255))
 
 
-def make_image(grayscale: bool) -> tuple[int, int, list[tuple[int, int, int]]]:
-	height = len(PAIRS) * (2 * STRIP_HEIGHT + ROW_GAP) + (len(PAIRS) - 1) * GROUP_GAP
+def make_image(pairs: list[tuple[tuple[float, float, float], tuple[float, float, float]]], interpolators, grayscale: bool) -> tuple[int, int, list[tuple[int, int, int]]]:
+	row_count = len(interpolators)
+	height = len(pairs) * (row_count * STRIP_HEIGHT + (row_count - 1) * ROW_GAP) + (len(pairs) - 1) * GROUP_GAP
 	pixels = [BACKGROUND] * (WIDTH * height)
 	y = 0
-	for pair_index, (start, end) in enumerate(PAIRS):
-		for row_index, interpolator in enumerate((interpolate_hsl, interpolate_oklab)):
+	for pair_index, (start, end) in enumerate(pairs):
+		for row_index, interpolator in enumerate(interpolators):
 			row_y = y + row_index * (STRIP_HEIGHT + ROW_GAP)
 			for x in range(WIDTH):
 				t = x / (WIDTH - 1)
@@ -161,12 +210,12 @@ def make_image(grayscale: bool) -> tuple[int, int, list[tuple[int, int, int]]]:
 				pixel = tuple(to_byte(channel) for channel in rgb)
 				for dy in range(STRIP_HEIGHT):
 					pixels[(row_y + dy) * WIDTH + x] = pixel
-		if pair_index + 1 < len(PAIRS):
-			separator_y = y + 2 * STRIP_HEIGHT + ROW_GAP + GROUP_GAP // 2
+		if pair_index + 1 < len(pairs):
+			separator_y = y + row_count * STRIP_HEIGHT + (row_count - 1) * ROW_GAP + GROUP_GAP // 2
 			for dy in range(2):
 				for x in range(WIDTH):
 					pixels[(separator_y + dy) * WIDTH + x] = SEPARATOR
-		y += 2 * STRIP_HEIGHT + ROW_GAP + GROUP_GAP
+		y += row_count * STRIP_HEIGHT + (row_count - 1) * ROW_GAP + GROUP_GAP
 	return WIDTH, height, pixels
 
 
@@ -194,11 +243,14 @@ def main() -> None:
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	output_dir = os.path.join(root, 'Docs', 'Images')
 	os.makedirs(output_dir, exist_ok=True)
-	for name, grayscale in (
-		('hsl-vs-okcolor-color.png', False),
-		('hsl-vs-okcolor-grayscale.png', True),
-	):
-		width, height, pixels = make_image(grayscale)
+	image_specs = [
+		('hsl-vs-okcolor-color.png', BASIC_PAIRS, (interpolate_hsl, interpolate_oklab), False),
+		('hsl-vs-okcolor-grayscale.png', BASIC_PAIRS, (interpolate_hsl, interpolate_oklab), True),
+		('okcolor-routes-color.png', ROUTE_PAIRS, (interpolate_oklab, interpolate_oklch_short, interpolate_oklch_long), False),
+		('okcolor-routes-grayscale.png', ROUTE_PAIRS, (interpolate_oklab, interpolate_oklch_short, interpolate_oklch_long), True),
+	]
+	for name, pairs, interpolators, grayscale in image_specs:
+		width, height, pixels = make_image(pairs, interpolators, grayscale)
 		write_png(os.path.join(output_dir, name), width, height, pixels)
 
 
