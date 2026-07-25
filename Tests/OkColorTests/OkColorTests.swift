@@ -120,6 +120,80 @@ final class OkColorTests: XCTestCase {
 		XCTAssertEqual(OkColor.gradient(from: SRGB(0, 0, 0), to: SRGB(1, 1, 1), count: 5).count, 5)
 	}
 
+	func testCppReferenceFixturesMatchSwiftConversions() throws {
+		let fixtures = try loadCppParityFixtures()
+
+		for testCase in fixtures.srgbCases {
+			let srgb = testCase.srgbValue
+			assertLinear(srgb.linear, testCase.linearValue, accuracy: 2e-7)
+			assertOkLab(OkLab(srgb: srgb), testCase.okLabValue, accuracy: 2e-6)
+			assertOkLch(OkLch(srgb: srgb), testCase.okLchValue, accuracy: 2e-6)
+			assertOkHsl(OkHsl(srgb: srgb), testCase.okHslValue, accuracy: 2e-5)
+
+			// Swift follows the Dart package's 1e-10 OkHSV guard; the C++ reference uses 0.f.
+			let okHsvAccuracy = testCase.name == "red" ? 1e-3 : 2e-5
+			assertOkHsv(OkHsv(srgb: srgb), testCase.okHsvValue, accuracy: okHsvAccuracy)
+		}
+	}
+
+	func testCppReferenceFixturesMatchSwiftGamutClipping() throws {
+		let fixtures = try loadCppParityFixtures()
+
+		for testCase in fixtures.linearClippingCases {
+			let linear = testCase.linearValue
+			assertLinear(OkGamutClipping.preserveChroma(linear), testCase.preserveChromaValue, accuracy: 5e-5)
+			assertLinear(OkGamutClipping.projectToPointFive(linear), testCase.projectToPointFiveValue, accuracy: 5e-5)
+			assertLinear(OkGamutClipping.projectToCusp(linear), testCase.projectToCuspValue, accuracy: 5e-5)
+			assertLinear(OkGamutClipping.adaptivePointFive(linear), testCase.adaptivePointFiveValue, accuracy: 5e-5)
+			assertLinear(OkGamutClipping.adaptiveCusp(linear), testCase.adaptiveCuspValue, accuracy: 5e-5)
+		}
+	}
+
+	private struct CppParityFixtures: Decodable {
+		var srgbCases: [CppSRGBCase]
+		var linearClippingCases: [CppClippingCase]
+	}
+
+	private struct CppSRGBCase: Decodable {
+		var name: String
+		var srgb: [Double]
+		var linear: [Double]
+		var okLab: [Double]
+		var okLch: [Double]
+		var okHsl: [Double]
+		var okHsv: [Double]
+
+		var srgbValue: SRGB { SRGB(srgb[0], srgb[1], srgb[2]) }
+		var linearValue: LinearSRGB { LinearSRGB(linear[0], linear[1], linear[2]) }
+		var okLabValue: OkLab { OkLab(okLab[0], okLab[1], okLab[2]) }
+		var okLchValue: OkLch { OkLch(okLch[0], okLch[1], okLch[2]) }
+		var okHslValue: OkHsl { OkHsl(okHsl[0], okHsl[1], okHsl[2]) }
+		var okHsvValue: OkHsv { OkHsv(okHsv[0], okHsv[1], okHsv[2]) }
+	}
+
+	private struct CppClippingCase: Decodable {
+		var name: String
+		var linear: [Double]
+		var preserveChroma: [Double]
+		var projectToPointFive: [Double]
+		var projectToCusp: [Double]
+		var adaptivePointFive: [Double]
+		var adaptiveCusp: [Double]
+
+		var linearValue: LinearSRGB { LinearSRGB(linear[0], linear[1], linear[2]) }
+		var preserveChromaValue: LinearSRGB { LinearSRGB(preserveChroma[0], preserveChroma[1], preserveChroma[2]) }
+		var projectToPointFiveValue: LinearSRGB { LinearSRGB(projectToPointFive[0], projectToPointFive[1], projectToPointFive[2]) }
+		var projectToCuspValue: LinearSRGB { LinearSRGB(projectToCusp[0], projectToCusp[1], projectToCusp[2]) }
+		var adaptivePointFiveValue: LinearSRGB { LinearSRGB(adaptivePointFive[0], adaptivePointFive[1], adaptivePointFive[2]) }
+		var adaptiveCuspValue: LinearSRGB { LinearSRGB(adaptiveCusp[0], adaptiveCusp[1], adaptiveCusp[2]) }
+	}
+
+	private func loadCppParityFixtures() throws -> CppParityFixtures {
+		let url = try XCTUnwrap(Bundle.module.url(forResource: "CppParityFixtures", withExtension: "json"))
+		let data = try Data(contentsOf: url)
+		return try JSONDecoder().decode(CppParityFixtures.self, from: data)
+	}
+
 	private func assertSRGB(_ actual: SRGB, _ expected: SRGB, accuracy: Double, file: StaticString = #filePath, line: UInt = #line) {
 		XCTAssertEqual(actual.red, expected.red, accuracy: accuracy, file: file, line: line)
 		XCTAssertEqual(actual.green, expected.green, accuracy: accuracy, file: file, line: line)

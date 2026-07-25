@@ -10,6 +10,10 @@ let package = Package(
 	],
 	targets: [
 		.target(name: "OkColor"),
-		.testTarget(name: "OkColorTests", dependencies: ["OkColor"]),
+		.testTarget(
+			name: "OkColorTests",
+			dependencies: ["OkColor"],
+			resources: [.process("Fixtures")]
+		),
 	]
 )
