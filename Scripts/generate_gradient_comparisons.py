@@ -16,20 +16,13 @@ import zlib
 WIDTH = 960
 STRIP_HEIGHT = 46
 ROW_GAP = 4
-GROUP_GAP = 20
+SECTION_GAP = 10
 BACKGROUND = (246, 246, 243)
-SEPARATOR = (224, 224, 220)
-
-BASIC_PAIRS = [
-	((0.05, 0.20, 1.00), (1.00, 0.90, 0.05)),
-	((0.88, 0.04, 0.92), (0.04, 0.88, 0.35)),
-	((1.00, 0.12, 0.04), (0.00, 0.72, 1.00)),
-]
-
-ROUTE_PAIRS = [
-	((0.00, 0.00, 1.00), (1.00, 1.00, 0.00)),
-	((1.00, 0.00, 0.00), (0.00, 1.00, 1.00)),
-	((0.65, 0.00, 1.00), (0.95, 0.78, 0.00)),
+VARIATIONS = [
+	('blue-yellow', (0.00, 0.00, 1.00), (1.00, 1.00, 0.00)),
+	('red-cyan', (1.00, 0.00, 0.00), (0.00, 1.00, 1.00)),
+	('purple-gold', (0.65, 0.00, 1.00), (0.95, 0.78, 0.00)),
+	('magenta-green', (0.92, 0.02, 0.74), (0.04, 0.88, 0.35)),
 ]
 
 
@@ -194,30 +187,27 @@ def to_byte(channel: float) -> int:
 	return int(round(clamp(channel) * 255))
 
 
-def make_image(pairs: list[tuple[tuple[float, float, float], tuple[float, float, float]]], interpolators, grayscale: bool) -> tuple[int, int, list[tuple[int, int, int]]]:
-	row_count = len(interpolators)
-	height = len(pairs) * (row_count * STRIP_HEIGHT + (row_count - 1) * ROW_GAP) + (len(pairs) - 1) * GROUP_GAP
+def make_method_comparison_image(start: tuple[float, float, float], end: tuple[float, float, float]) -> tuple[int, int, list[tuple[int, int, int]]]:
+	methods = (interpolate_hsl, interpolate_oklab, interpolate_oklch_short, interpolate_oklch_long)
+	row_count = len(methods) * 2
+	height = row_count * STRIP_HEIGHT + (row_count - 2) * ROW_GAP + SECTION_GAP
 	pixels = [BACKGROUND] * (WIDTH * height)
-	y = 0
-	for pair_index, (start, end) in enumerate(pairs):
-		for row_index, interpolator in enumerate(interpolators):
-			row_y = y + row_index * (STRIP_HEIGHT + ROW_GAP)
-			for x in range(WIDTH):
-				t = x / (WIDTH - 1)
-				rgb = interpolator(start, end, t)
-				if grayscale:
-					rgb = oklab_grayscale(rgb)
-				pixel = tuple(to_byte(channel) for channel in rgb)
-				for dy in range(STRIP_HEIGHT):
-					pixels[(row_y + dy) * WIDTH + x] = pixel
-		if pair_index + 1 < len(pairs):
-			separator_y = y + row_count * STRIP_HEIGHT + (row_count - 1) * ROW_GAP + GROUP_GAP // 2
-			for dy in range(2):
-				for x in range(WIDTH):
-					pixels[(separator_y + dy) * WIDTH + x] = SEPARATOR
-		y += row_count * STRIP_HEIGHT + (row_count - 1) * ROW_GAP + GROUP_GAP
-	return WIDTH, height, pixels
 
+	rows = [(method, False) for method in methods] + [(method, True) for method in methods]
+	for row_index, (interpolator, grayscale) in enumerate(rows):
+		row_y = row_index * (STRIP_HEIGHT + ROW_GAP)
+		if row_index >= len(methods):
+			row_y += SECTION_GAP - ROW_GAP
+		for x in range(WIDTH):
+			t = x / (WIDTH - 1)
+			rgb = interpolator(start, end, t)
+			if grayscale:
+				rgb = oklab_grayscale(rgb)
+			pixel = tuple(to_byte(channel) for channel in rgb)
+			for dy in range(STRIP_HEIGHT):
+				pixels[(row_y + dy) * WIDTH + x] = pixel
+
+	return WIDTH, height, pixels
 
 def png_chunk(chunk_type: bytes, data: bytes) -> bytes:
 	return struct.pack('>I', len(data)) + chunk_type + data + struct.pack('>I', zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
@@ -243,15 +233,9 @@ def main() -> None:
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	output_dir = os.path.join(root, 'Docs', 'Images')
 	os.makedirs(output_dir, exist_ok=True)
-	image_specs = [
-		('hsl-vs-okcolor-color.png', BASIC_PAIRS, (interpolate_hsl, interpolate_oklab), False),
-		('hsl-vs-okcolor-grayscale.png', BASIC_PAIRS, (interpolate_hsl, interpolate_oklab), True),
-		('okcolor-routes-color.png', ROUTE_PAIRS, (interpolate_oklab, interpolate_oklch_short, interpolate_oklch_long), False),
-		('okcolor-routes-grayscale.png', ROUTE_PAIRS, (interpolate_oklab, interpolate_oklch_short, interpolate_oklch_long), True),
-	]
-	for name, pairs, interpolators, grayscale in image_specs:
-		width, height, pixels = make_image(pairs, interpolators, grayscale)
-		write_png(os.path.join(output_dir, name), width, height, pixels)
+	for name, start, end in VARIATIONS:
+		width, height, pixels = make_method_comparison_image(start, end)
+		write_png(os.path.join(output_dir, f'okcolor-methods-{name}.png'), width, height, pixels)
 
 
 if __name__ == '__main__':

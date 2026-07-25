@@ -31,29 +31,31 @@ model.
 
 ## Visual Comparison
 
-These generated comparisons use saturated endpoint pairs. In each pair below,
-the upper strip is classic HSL interpolation and the lower strip is OkColor's
-straight Oklab interpolation.
-
-![HSL versus OkColor gradients in color](Docs/Images/hsl-vs-okcolor-color.png)
-
-The grayscale version converts each sampled color to a neutral gray with the same
-Oklab lightness, making uneven lightness shifts easier to spot.
-
-![HSL versus OkColor gradients in grayscale](Docs/Images/hsl-vs-okcolor-grayscale.png)
+These generated comparisons use saturated endpoint pairs to show how hue-route
+choices affect a gradient. Each image shows four color rows followed by the same
+four rows in grayscale. The row order is HSL, straight Oklab, OkLch shortest
+path, and OkLch long path.
 
 Straight Oklab interpolation is often smoother than HSL, but colors on opposite
-sides of the hue wheel can still pass through low-chroma gray. For those cases,
-use a polar hue interpolation method such as `.oklch` and choose whether the hue
-travels the short or long way around the wheel. In each group below, the rows are
-straight Oklab, OkLch shortest path, and OkLch long path.
+sides of the hue wheel can pass through low-chroma gray. For those cases, use a
+polar hue interpolation method such as `.oklch` and choose whether the hue travels
+the short or long way around the wheel with `shortestPath`.
 
-![Oklab and OkLch hue-route gradients in color](Docs/Images/okcolor-routes-color.png)
+Blue to yellow:
 
-The same route examples in grayscale show that the OkLch rows keep a smooth
-lightness ramp while avoiding the neutral midpoint.
+![Blue to yellow HSL, Oklab, and OkLch gradient comparison](Docs/Images/okcolor-methods-blue-yellow.png)
 
-![Oklab and OkLch hue-route gradients in grayscale](Docs/Images/okcolor-routes-grayscale.png)
+Red to cyan:
+
+![Red to cyan HSL, Oklab, and OkLch gradient comparison](Docs/Images/okcolor-methods-red-cyan.png)
+
+Purple to gold:
+
+![Purple to gold HSL, Oklab, and OkLch gradient comparison](Docs/Images/okcolor-methods-purple-gold.png)
+
+Magenta to green:
+
+![Magenta to green HSL, Oklab, and OkLch gradient comparison](Docs/Images/okcolor-methods-magenta-green.png)
 
 ## Installation
 
