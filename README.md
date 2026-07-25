@@ -1,8 +1,9 @@
 # OkColor
 
-OkColor is a small Swift package for working with the Oklab and OkLch color
-spaces. It provides value types for Oklab, OkLch, linear sRGB, and gamma-encoded
-sRGB, plus conversions and interpolation helpers.
+OkColor is a Swift package for working with the Oklab family of color spaces. It
+provides value types for Oklab, OkLch, OkHSL, OkHSV, linear sRGB, gamma-encoded
+sRGB, and XYZ, plus conversions, interpolation, gamut helpers, and harmony
+utilities.
 
 ## Origin
 
@@ -11,8 +12,9 @@ space was introduced in his research article
 [A perceptual color space for image processing](https://bottosson.github.io/posts/oklab/),
 published in 2020.
 
-This package implements the sRGB/Oklab conversion path from Ottosson's reference
-work in Swift.
+This package implements Ottosson's sRGB/Oklab, OkHSL, OkHSV, and gamut-helper
+math in Swift. The original C++ reference sources are included under
+`ReferenceSources/OkColor`.
 
 ## Premise
 
@@ -23,7 +25,9 @@ more predictable.
 
 Use Oklab when you want smoother gradients, perceptual interpolation, or color
 adjustments that better preserve perceived hue and lightness. Use OkLch when the
-same space is easier to work with as lightness, chroma, and hue.
+same space is easier to work with as lightness, chroma, and hue. Use OkHSL and
+OkHSV when you want familiar HSL/HSV-style controls backed by Oklab's perceptual
+model.
 
 ## Installation
 
@@ -47,9 +51,10 @@ import OkColor
 
 ## Public API
 
-### `SRGB`
+### Color Models
 
-Gamma-encoded sRGB channels, typically in the `0...1` range.
+The core value types are plain `Double` structs and are safe to use across Apple
+platforms without UIKit/AppKit dependencies.
 
 ```swift
 public struct SRGB: Equatable, Hashable, Sendable {
@@ -59,14 +64,12 @@ public struct SRGB: Equatable, Hashable, Sendable {
 
 	public init(_ red: Double, _ green: Double, _ blue: Double)
 	public var linear: LinearSRGB
+	public var okLab: OkLab
+	public var okLch: OkLch
+	public var okHsl: OkHsl
+	public var okHsv: OkHsv
 }
-```
 
-### `LinearSRGB`
-
-Linear sRGB channels used by the Oklab conversion matrices.
-
-```swift
 public struct LinearSRGB: Equatable, Hashable, Sendable {
 	public var red: Double
 	public var green: Double
@@ -74,19 +77,15 @@ public struct LinearSRGB: Equatable, Hashable, Sendable {
 
 	public init(_ red: Double, _ green: Double, _ blue: Double)
 	public var srgb: SRGB
+	public var unclampedSRGB: SRGB
+	public var okLab: OkLab
 }
 ```
 
 `LinearSRGB.srgb` clamps each channel into the displayable sRGB gamut before
 gamma encoding.
 
-### `OkLab`
-
-Perceptually uniform Lab-style coordinates:
-
-- `l`: perceived lightness
-- `a`: green-red opponent axis
-- `b`: blue-yellow opponent axis
+Oklab-style spaces:
 
 ```swift
 public struct OkLab: Equatable, Hashable, Sendable {
@@ -97,23 +96,18 @@ public struct OkLab: Equatable, Hashable, Sendable {
 	public init(_ l: Double, _ a: Double, _ b: Double)
 	public init(srgb: SRGB)
 	public init(linearSRGB rgb: LinearSRGB)
+	public init(xyz: XYZ)
 
 	public var srgb: SRGB
 	public var linearSRGB: LinearSRGB
+	public var xyz: XYZ
+	public var okLch: OkLch
+	public var okHsl: OkHsl
+	public var okHsv: OkHsv
 
 	public func lerp(to other: OkLab, t: Double) -> OkLab
 }
-```
 
-### `OkLch`
-
-Cylindrical Oklab coordinates:
-
-- `l`: perceived lightness
-- `c`: chroma
-- `h`: hue angle in radians
-
-```swift
 public struct OkLch: Equatable, Hashable, Sendable {
 	public var l: Double
 	public var c: Double
@@ -125,12 +119,71 @@ public struct OkLch: Equatable, Hashable, Sendable {
 
 	public var oklab: OkLab
 	public var srgb: SRGB
+	public var hue: OkHue
 
-	public func lerp(to other: OkLch, t: Double) -> OkLch
+	public func darker(_ percentage: Double) -> OkLch
+	public func lighter(_ percentage: Double) -> OkLch
+	public func saturate(_ percentage: Double) -> OkLch
+	public func desaturate(_ percentage: Double) -> OkLch
+	public func rotated(_ degrees: Double) -> OkLch
+	public func complementary() -> OkLch
+	public func splitComplementary() -> [OkLch]
+	public func triadic() -> [OkLch]
+	public func tetradic() -> [OkLch]
+	public func analogous(count: Int, angle: Double) -> [OkLch]
+	public func shades(count: Int) -> [OkLch]
+	public func tints(count: Int) -> [OkLch]
+	public func lerp(to other: OkLch, t: Double, shortestPath: Bool) -> OkLch
 }
 ```
 
-`OkLch.lerp(to:t:)` interpolates hue along the shortest angular path.
+OkHSL and OkHSV mirror the Dart package's perceptual HSL/HSV controls:
+
+```swift
+public struct OkHsl: Equatable, Hashable, Sendable {
+	public var h: Double
+	public var s: Double
+	public var l: Double
+
+	public init(_ h: Double, _ s: Double, _ l: Double)
+	public init(srgb: SRGB)
+	public var srgb: SRGB
+}
+
+public struct OkHsv: Equatable, Hashable, Sendable {
+	public var h: Double
+	public var s: Double
+	public var v: Double
+
+	public init(_ h: Double, _ s: Double, _ v: Double)
+	public init(srgb: SRGB)
+	public var srgb: SRGB
+}
+```
+
+Both types include `darker`, `lighter`, `saturate`, `desaturate`, `rotated`,
+color harmony helpers, `shades`, `tints`, and shortest-path hue interpolation.
+
+### Utilities
+
+```swift
+public enum OkColor {
+	public static func interpolate(_ start: SRGB, _ end: SRGB, t: Double, method: OkColorInterpolationMethod, shortestPath: Bool) -> SRGB
+	public static func gradient(from start: SRGB, to end: SRGB, count: Int, method: OkColorInterpolationMethod, shortestPath: Bool) -> [SRGB]
+}
+
+public enum OkColorInterpolationMethod {
+	case oklab, okhsv, okhsl, oklch, hsv, rgb
+}
+
+public enum OkGamut {
+	public static func computeMaxSaturation(_ a: Double, _ b: Double) -> Double
+	public static func findCusp(_ a: Double, _ b: Double) -> (l: Double, c: Double)
+	public static func findGamutIntersection(_ a: Double, _ b: Double, l1: Double, c1: Double, l0: Double, cusp: (l: Double, c: Double)) -> Double
+	public static func toe(_ x: Double) -> Double
+	public static func toeInverse(_ x: Double) -> Double
+}
+```
 
 ## Examples
 
@@ -156,4 +209,15 @@ Adjust chroma in OkLch:
 var color = OkLch(srgb: SRGB(0.4, 0.7, 0.9))
 color.c *= 1.2
 let saturated = color.srgb
+```
+
+Generate a perceptual OkHSL gradient:
+
+```swift
+let colors = OkColor.gradient(
+	from: SRGB(0.2, 0.4, 1.0),
+	to: SRGB(1.0, 0.4, 0.2),
+	count: 7,
+	method: .okhsl
+)
 ```
