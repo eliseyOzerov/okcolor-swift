@@ -2,6 +2,14 @@ import Foundation
 
 /// Namespace for color interpolation and gradient helpers.
 public enum OkColor {
+	/// Interpolates between two sRGB colors using the selected color space.
+	///
+	/// - Parameters:
+	///   - start: The color returned when `t` is `0`.
+	///   - end: The color returned when `t` is `1`.
+	///   - t: The interpolation fraction. Values outside `0...1` extrapolate.
+	///   - method: The interpolation strategy.
+	///   - shortestPath: Whether hue-based methods travel the shorter route around the hue wheel.
 	public static func interpolate(_ start: SRGB, _ end: SRGB, t: Double, method: OkColorInterpolationMethod = .oklab, shortestPath: Bool = true) -> SRGB {
 		switch method {
 		case .oklab:
@@ -19,6 +27,9 @@ public enum OkColor {
 		}
 	}
 
+	/// Builds an evenly spaced gradient between two sRGB colors.
+	///
+	/// A `count` of `1` returns `[start]`; a non-positive `count` returns an empty array.
 	public static func gradient(from start: SRGB, to end: SRGB, count: Int = 5, method: OkColorInterpolationMethod = .oklab, shortestPath: Bool = true) -> [SRGB] {
 		guard count > 1 else {
 			return count == 1 ? [start] : []
